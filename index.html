@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>線上臨床評估面板</title>
+    
+    <!-- 手機 App 桌面捷徑支援設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="臨床評估">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📋</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%234CAF50%22 rx=%2220%22/><text y=%2270%22 x=%2215%22 font-size=%2265%22>📋</text></svg>">
+
+    <!-- 引入 SheetJS 核心庫：用來生成標準、不會有警告的 .xlsx 檔案 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 15px; max-width: 800px; margin: auto; background-color: #f5f5f5; -webkit-tap-highlight-color: transparent; }
+        .header-controls { position: sticky; top: 0; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; justify-content: space-between; margin-bottom: 20px; z-index: 100; flex-wrap: wrap; gap: 10px; }
+        button { padding: 10px 15px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; flex: 1; min-width: 100px; }
+        .btn-delete { background-color: #ff4d4d; color: white; }
+        .btn-report { background-color: #4CAF50; color: white; }
+        .btn-raw { background-color: #2196F3; color: white; }
+        .btn-mic { background-color: #ff9800; color: white; padding: 8px 12px; font-size: 14px; border: none; border-radius: 6px; cursor: pointer; flex: none; min-width: auto; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        details { background: white; margin-bottom: 15px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        summary { padding: 15px; font-size: 18px; font-weight: bold; background-color: #e3f2fd; cursor: pointer; user-select: none; }
+        .content { padding: 15px; border-top: 1px solid #ddd; }
+        .item-group { margin-bottom: 15px; padding: 10px; background: #f9f9f9; border-radius: 6px; }
+        .item-title { font-weight: bold; margin-bottom: 8px; color: #333; }
+        label { display: block; padding: 10px 5px; cursor: pointer; line-height: 1.4; }
+        .inline-label { display: inline-flex; align-items: center; padding: 5px 0; margin-right: 15px; font-weight: bold; color: #555; white-space: nowrap; }
+        input[type="radio"], input[type="checkbox"] { margin-right: 10px; transform: scale(1.3); flex-shrink: 0; }
+        input[type="number"] { padding: 6px; width: 65px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; margin-left: 6px; }
+        input.min-input { width: 45px !important; text-align: center; margin: 0 5px; }
+        textarea { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; resize: vertical; line-height: 1.5; font-family: inherit;}
+        .score-display { font-size: 16px; font-weight: bold; color: #d32f2f; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; }
+        .footer { text-align: center; margin-top: 40px; padding-bottom: 30px; font-size: 14px; color: #666; letter-spacing: 1px; }
+        .vital-container { display: flex; flex-wrap: wrap; align-items: center; margin-top: 5px; background: #fff; padding: 8px 10px; border-radius: 4px; border: 1px solid #eee; }
+        .vital-recovery { background: #eef7e8; margin-top: 5px; }
+        .cp-subbox { margin-left: 25px; margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 5px; background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+    <div class="header-controls">
+        <button type="button" class="btn-delete" onclick="deleteAllData()">刪除全部資料</button>
+        <button type="button" class="btn-raw" onclick="generateRawData()">下載原始資料</button>
+        <button type="button" class="btn-report" onclick="generateReport()">生成報告</button>
+    </div>
+
+    <form id="assessmentForm">
+
+        <!-- 0. Premorbid function and occupational profile -->
+        <details>
+            <summary>0. Premorbid function and occupational profile</summary>
+            <div class="content">
+                <div class="item-group">
+                    <div class="item-title" data-name="內容描述" style="margin-bottom: 10px;">內容描述</div>
+                    <textarea id="premorbid_profile" name="premorbid_profile" rows="6" placeholder="請直接點擊此處輸入描述文字..."></textarea>
+                </div>
+            </div>
+        </details>
+
+        <!-- 1. BADL -->
+        <details>
+            <summary>1. BADL Functional Ability</summary>
+            <div class="content">
+                <!-- Resting Vital Sign 欄位 -->
+                <div class="item-group">
+                    <div class="item-title" data-name="Resting Vital Sign" style="margin-bottom: 5px;">Resting Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="resting_sbp" data-label="SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="resting_dbp" data-label="DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="resting_hr" data-label="HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="resting_spo2" data-label="SPO2"></label>
+                    </div>
+                </div>
+
+                <div class="item-group">
+                    <div class="item-title" data-name="Eating">Eating</div>
+                    <label><input type="checkbox" name="badl_eat_sub" value="tube feeding"> tube feeding</label>
+                    <label><input type="checkbox" name="badl_eat_sub" value="oral feeding"> oral feeding</label>
+                    <label><input type="checkbox" name="badl_eat_sub" value="NPO/TPN"> NPO/TPN</label>
+                    <hr>
+                    <label><input type="radio" name="badl_eat" value="Independent"> Independent</label>
+                    <label><input type="radio" name="badl_eat" value="Modified independent"> Modified independent</label>
+                    <label><input type="radio" name="badl_eat" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_eat" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_eat" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_eat" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_eat" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_eat" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_eat" value="Not applicable"> Not applicable</label>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Grooming">Grooming</div>
+                    <label><input type="checkbox" name="badl_groom_sub" value="oral swab"> oral swab</label>
+                    <label><input type="checkbox" name="badl_groom_sub" value="toothbrush"> toothbrush</label>
+                    <label><input type="checkbox" name="badl_groom_sub" value="denture"> denture</label>
+                    <hr>
+                    <label><input type="radio" name="badl_groom" value="Independent in standing level"> Independent in standing level</label>
+                    <label><input type="radio" name="badl_groom" value="Modified independent in unsupported sitting"> Modified independent in unsupported sitting</label>
+                    <label><input type="radio" name="badl_groom" value="Modified independent in supported sitting"> Modified independent in supported sitting</label>
+                    <label><input type="radio" name="badl_groom" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_groom" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_groom" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_groom" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_groom" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_groom" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_groom" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">練習走到洗手台站著/坐床邊/坐床上刷牙洗臉後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_groom_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_groom_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_groom_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_groom_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_groom_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_groom_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_groom_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_groom_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_groom_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Bed mobility：Rolling/supine to sit">Bed mobility：Rolling/supine to sit</div>
+                    <label><input type="radio" name="badl_bed" value="Independent"> Independent</label>
+                    <label><input type="radio" name="badl_bed" value="Modified independent"> Modified independent</label>
+                    <label><input type="radio" name="badl_bed" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_bed" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_bed" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_bed" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_bed" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_bed" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_bed" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">練習後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_bed_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_bed_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_bed_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_bed_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_bed_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_bed_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_bed_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_bed_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_bed_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Upper body dressing">Upper body dressing</div>
+                    <label><input type="checkbox" name="badl_updress_sub" value="pullover"> pullover</label>
+                    <label><input type="checkbox" name="badl_updress_sub" value="button-up"> button-up</label>
+                    <label><input type="checkbox" name="badl_updress_sub" value="bra"> bra</label>
+                    <hr>
+                    <label><input type="radio" name="badl_updress" value="Independent in standing level"> Independent in standing level</label>
+                    <label><input type="radio" name="badl_updress" value="Modified independent in unsupported sitting"> Modified independent in unsupported sitting</label>
+                    <label><input type="radio" name="badl_updress" value="Modified independent in supported sitting"> Modified independent in supported sitting</label>
+                    <label><input type="radio" name="badl_updress" value="Modified independent in supine"> Modified independent in supine</label>
+                    <label><input type="radio" name="badl_updress" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_updress" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_updress" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_updress" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_updress" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_updress" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_updress" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">坐床邊/坐床上穿脫上衣後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_updress_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_updress_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_updress_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_updress_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_updress_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_updress_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_updress_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_updress_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_updress_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Lower body dressing">Lower body dressing</div>
+                    <label><input type="checkbox" name="badl_lowdress_sub" value="underwear"> underwear</label>
+                    <label><input type="checkbox" name="badl_lowdress_sub" value="pants"> pants</label>
+                    <label><input type="checkbox" name="badl_lowdress_sub" value="socks"> socks</label>
+                    <label><input type="checkbox" name="badl_lowdress_sub" value="shoes"> shoes</label>
+                    <hr>
+                    <label><input type="radio" name="badl_lowdress" value="Independent in standing level"> Independent in standing level</label>
+                    <label><input type="radio" name="badl_lowdress" value="Modified independent in unsupported sitting"> Modified independent in unsupported sitting</label>
+                    <label><input type="radio" name="badl_lowdress" value="Modified independent in supported sitting"> Modified independent in supported sitting</label>
+                    <label><input type="radio" name="badl_lowdress" value="Modified independent in supine"> Modified independent in supine</label>
+                    <label><input type="radio" name="badl_lowdress" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_lowdress" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_lowdress" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_lowdress" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_lowdress" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_lowdress" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_lowdress" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">坐床邊/坐床上/躺床穿脫褲子後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_lowdress_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_lowdress_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_lowdress_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_lowdress_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_lowdress_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_lowdress_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_lowdress_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_lowdress_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_lowdress_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+
+                <div class="item-group">
+                    <div class="item-title" data-name="Transfer">Transfer</div>
+                    <label><input type="radio" name="badl_trans" value="Independent"> Independent</label>
+                    <label><input type="radio" name="badl_trans" value="Modified independent"> Modified independent</label>
+                    <label><input type="radio" name="badl_trans" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_trans" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_trans" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_trans" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_trans" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_trans" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_trans" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">練習後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_trans_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_trans_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_trans_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_trans_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_trans_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_trans_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_trans_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_trans_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_trans_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Toileting">Toileting</div>
+                    <label><input type="checkbox" name="badl_toilet_sub" value="Beside commode"> Beside commode</label>
+                    <label><input type="checkbox" name="badl_toilet_sub" value="bathroom"> bathroom</label>
+                    <label><input type="checkbox" name="badl_toilet_sub" value="diaper"> diaper</label>
+                    <label><input type="checkbox" name="badl_toilet_sub" value="foley"> foley</label>
+                    <hr>
+                    <label><input type="radio" name="badl_toilet" value="Independent"> Independent</label>
+                    <label><input type="radio" name="badl_toilet" value="Modified independent"> Modified independent</label>
+                    <label><input type="radio" name="badl_toilet" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_toilet" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_toilet" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_toilet" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_toilet" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_toilet" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_toilet" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">練習後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_toilet_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_toilet_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_toilet_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_toilet_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_toilet_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_toilet_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_toilet_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_toilet_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_toilet_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Bathing：sponge bath in">Bathing：sponge bath in</div>
+                    <label><input type="checkbox" name="badl_sponge_sub" value="supine"> supine</label>
+                    <label><input type="checkbox" name="badl_sponge_sub" value="supported sitting"> supported sitting</label>
+                    <label><input type="checkbox" name="badl_sponge_sub" value="unsupported sitting"> unsupported sitting</label>
+                    <hr>
+                    <label><input type="radio" name="badl_sponge" value="Independent"> Independent</label>
+                    <label><input type="radio" name="badl_sponge" value="Modified independent"> Modified independent</label>
+                    <label><input type="radio" name="badl_sponge" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_sponge" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_sponge" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_sponge" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_sponge" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_sponge" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_sponge" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">練習後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_sponge_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_sponge_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_sponge_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_sponge_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_sponge_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_sponge_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_sponge_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_sponge_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_sponge_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Bathing：shower in">Bathing：shower in</div>
+                    <label><input type="checkbox" name="badl_shower_sub" value="sitting"> sitting</label>
+                    <label><input type="checkbox" name="badl_shower_sub" value="standing"> standing</label>
+                    <hr>
+                    <label><input type="radio" name="badl_shower" value="Independent"> Independent</label>
+                    <label><input type="radio" name="badl_shower" value="Modified independent"> Modified independent</label>
+                    <label><input type="radio" name="badl_shower" value="Supervision"> Supervision</label>
+                    <label><input type="radio" name="badl_shower" value="Minimal assistance"> Minimal assistance</label>
+                    <label><input type="radio" name="badl_shower" value="Moderate assistance"> Moderate assistance</label>
+                    <label><input type="radio" name="badl_shower" value="Maximum assistance"> Maximum assistance</label>
+                    <label><input type="radio" name="badl_shower" value="Dependent"> Dependent</label>
+                    <label><input type="radio" name="badl_shower" value="Not tested"> Not tested</label>
+                    <label><input type="radio" name="badl_shower" value="Not applicable"> Not applicable</label>
+                    <hr>
+                    <div class="item-title" style="font-size: 14px; color: #555;">練習後 Vital Sign</div>
+                    <div class="vital-container">
+                        <label class="inline-label">SBP<input type="number" name="badl_shower_sbp" data-label="練習後 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_shower_dbp" data-label="練習後 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_shower_hr" data-label="練習後 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_shower_spo2" data-label="練習後 SPO2"></label>
+                    </div>
+                    <div class="vital-container vital-recovery">
+                        <label class="inline-label">休息 <input type="number" class="min-input" name="badl_shower_rest_min" data-label="練習後休息分鐘"> 分鐘後，回復至</label>
+                        <label class="inline-label">SBP<input type="number" name="badl_shower_rest_sbp" data-label="練習後回復 SBP"></label>
+                        <label class="inline-label">DBP<input type="number" name="badl_shower_rest_dbp" data-label="練習後回復 DBP"></label>
+                        <label class="inline-label">HR<input type="number" name="badl_shower_rest_hr" data-label="練習後回復 HR"></label>
+                        <label class="inline-label">SPO2(%)<input type="number" name="badl_shower_rest_spo2" data-label="練習後回復 SPO2"></label>
+                    </div>
+                </div>
+                
+                <div class="item-group">
+                    <div class="item-title" data-name="Functional Locomotion">Functional Locomotion</div>
+                    <label><input type="checkbox" name="badl_loco_sub" value="NA"> NA</label>
+                    <label><input type="checkbox" name="badl_loco_sub" value="wheelchair"> wheelchair</label>
+                    <label><input type="checkbox" name="badl_loco_sub" value="walk"> walk</label>
+                    <label><input type="checkbox" name="badl_loco_sub" value="up/down stairs"> up/down stairs</label>
+                    <hr>
+                    <label><input type="radio" name="badl_loco" value="Not applicable due to bedridden"> Not applicable due to bedridden</label>
+                    <label><input type="radio" name="badl_loco" value="NA due to bed rest"> NA due to bed rest</label>
+                    <label><input type="radio" name="badl_loco" value="self-propelled/control"> self-propelled/control</label>
+                    <label><input type="radio" name="badl_loco" value="with assistance"> with assistance</label>
+                    <label><input type="radio" name="badl_loco" value="under supervision"> under supervision</label>
+                    <label><input type="radio" name="badl_loco" value="independently"> independently</label>
+                    <label><input type="radio" name="badl_loco" value="with wheel-walker"> with wheel-walker</label>
+                    <label><input type="radio" name="badl_loco" value="with walker"> with walker</label>
+                    <label><input type="radio" name="badl_loco" value="with quadricane"> with quadricane</label>
+                    <label><input type="radio" name="badl_loco" value="with regular cane"> with regular cane</label>
+                </div>
+            </div>
+        </details>
+
+        <!-- 2. Barthel index -->
+        <details>
+            <summary>2. Barthel index</summary>
+            <div class="content" id="bi_section">
+                <div class="item-group"><div class="item-title">Feeding</div><label><input type="radio" name="bi_feed" value="0"> 0</label><label><input type="radio" name="bi_feed" value="5"> 5</label><label><input type="radio" name="bi_feed" value="10"> 10</label></div>
+                <div class="item-group"><div class="item-title">Grooming</div><label><input type="radio" name="bi_groom" value="0"> 0</label><label><input type="radio" name="bi_groom" value="5"> 5</label></div>
+                <div class="item-group"><div class="item-title">Toilet use</div><label><input type="radio" name="bi_toilet" value="0"> 0</label><label><input type="radio" name="bi_toilet" value="5"> 5</label><label><input type="radio" name="bi_toilet" value="10"> 10</label></div>
+                <div class="item-group"><div class="item-title">Bathing</div><label><input type="radio" name="bi_bath" value="0"> 0</label><label><input type="radio" name="bi_bath" value="5"> 5</label></div>
+                <div class="item-group"><div class="item-title">Dressing</div><label><input type="radio" name="bi_dress" value="0"> 0</label><label><input type="radio" name="bi_dress" value="5"> 5</label><label><input type="radio" name="bi_dress" value="10"> 10</label></div>
+                <div class="item-group"><div class="item-title">Bowels</div><label><input type="radio" name="bi_bowel" value="0"> 0</label><label><input type="radio" name="bi_bowel" value="5"> 5</label><label><input type="radio" name="bi_bowel" value="10"> 10</label></div>
+                <div class="item-group"><div class="item-title">Bladder</div><label><input type="radio" name="bi_bladder" value="0"> 0</label><label><input type="radio" name="bi_bladder" value="5"> 5</label><label><input type="radio" name="bi_bladder" value="10"> 10</label></div>
+                <div class="item-group"><div class="item-title">Mobility</div><label><input type="radio" name="bi_mobile" value="0"> 0</label><label><input type="radio" name="bi_mobile" value="5"> 5</label><label><input type="radio" name="bi_mobile" value="10"> 10</label><label><input type="radio" name="bi_mobile" value="15"> 15</label></div>
+                <div class="item-group"><div class="item-title">Upstairs</div><label><input type="radio" name="bi_stairs" value="0"> 0</label><label><input type="radio" name="bi_stairs" value="5"> 5</label><label><input type="radio" name="bi_stairs" value="10"> 10</label></div>
+                <div class="item-group"><div class="item-title">Transfer</div><label><input type="radio" name="bi_trans" value="0"> 0</label><label><input type="radio" name="bi_trans" value="5"> 5</label><label><input type="radio" name="bi_trans" value="10"> 10</label><label><input type="radio" name="bi_trans" value="15"> 15</label></div>
+                <div class="score-display">總計：總分 <span id="res_bi_total">-</span>/100；依賴程度：<span id="res_bi_level">-</span></div>
+            </div>
+        </details>
+
+        <!-- 3. MoCA -->
+        <details>
+            <summary>3. MoCA</summary>
+            <div class="content" id="moca_section">
+                <label><input type="checkbox" id="moca_edu" value="1"> 教育程度≦12年加1分</label>
+                <div class="item-group"><div class="item-title">視覺空間執行(1)</div><label><input type="radio" name="mo_vis1" value="0"> 0</label><label><input type="radio" name="mo_vis1" value="1"> 1</label></div>
+                <div class="item-group"><div class="item-title">視覺空間執行(1)</div><label><input type="radio" name="mo_vis2" value="0"> 0</label><label><input type="radio" name="mo_vis2" value="1"> 1</label></div>
+                <div class="item-group"><div class="item-title">視覺空間執行(3)</div><label><input type="radio" name="mo_vis3" value="0"> 0</label><label><input type="radio" name="mo_vis3" value="1"> 1</label><label><input type="radio" name="mo_vis3" value="2"> 2</label><label><input type="radio" name="mo_vis3" value="3"> 3</label></div>
+                <div class="item-group"><div class="item-title">命名(3)</div><label><input type="radio" name="mo_name" value="0"> 0</label><label><input type="radio" name="mo_name" value="1"> 1</label><label><input type="radio" name="mo_name" value="2"> 2</label><label><input type="radio" name="mo_name" value="3"> 3</label></div>
+                <div class="item-group"><div class="item-title">專注(2)</div><label><input type="radio" name="mo_att2" value="0"> 0</label><label><input type="radio" name="mo_att2" value="1"> 1</label><label><input type="radio" name="mo_att2" value="2"> 2</label></div>
+                <div class="item-group"><div class="item-title">專注(1)</div><label><input type="radio" name="mo_att1" value="0"> 0</label><label><input type="radio" name="mo_att1" value="1"> 1</label></div>
+                <div class="item-group"><div class="item-title">專注(3)</div><label><input type="radio" name="mo_att3" value="0"> 0</label><label><input type="radio" name="mo_att3" value="1"> 1</label><label><input type="radio" name="mo_att3" value="2"> 2</label><label><input type="radio" name="mo_att3" value="3"> 3</label></div>
+                <div class="item-group"><div class="item-title">語言(2)</div><label><input type="radio" name="mo_lang2" value="0"> 0</label><label><input type="radio" name="mo_lang2" value="1"> 1</label><label><input type="radio" name="mo_lang2" value="2"> 2</label></div>
+                <div class="item-group"><div class="item-title">語言(1)</div><label><input type="radio" name="mo_lang1" value="0"> 0</label><label><input type="radio" name="mo_lang1" value="1"> 1</label></div>
+                <div class="item-group"><div class="item-title">抽象概念(2)</div><label><input type="radio" name="mo_abs" value="0"> 0</label><label><input type="radio" name="mo_abs" value="1"> 1</label><label><input type="radio" name="mo_abs" value="2"> 2</label></div>
+                <div class="item-group"><div class="item-title">延遲記憶(5)</div><label><input type="radio" name="mo_mem" value="0"> 0</label><label><input type="radio" name="mo_mem" value="1"> 1</label><label><input type="radio" name="mo_mem" value="2"> 2</label><label><input type="radio" name="mo_mem" value="3"> 3</label><label><input type="radio" name="mo_mem" value="4"> 4</label><label><input type="radio" name="mo_mem" value="5"> 5</label></div>
+                <div class="item-group"><div class="item-title">定向(6)</div><label><input type="radio" name="mo_ori" value="0"> 0</label><label><input type="radio" name="mo_ori" value="1"> 1</label><label><input type="radio" name="mo_ori" value="2"> 2</label><label><input type="radio" name="mo_ori" value="3"> 3</label><label><input type="radio" name="mo_ori" value="4"> 4</label><label><input type="radio" name="mo_ori" value="5"> 5</label><label><input type="radio" name="mo_ori" value="6"> 6</label></div>
+                <div class="score-display">總計：總分 <span id="res_moca_total">-</span>/30</div>
+            </div>
+        </details>
+
+        <!-- 4. IADL -->
+        <details>
+            <summary>4. IADL(Revised Nottingham EADL)</summary>
+            <div class="content" id="iadl_section">
+                <div class="item-group"><label>病前分數：<input type="number" id="iadl_pre" placeholder="病前分數"></label></div>
+                <script>
+                    const iadl_items = [
+                        "自己在戶外行走", "自己爬樓梯", "獨自進出汽車", "獨自在不平坦之路面行走", "自己過馬路", "自己搭乘公車(公共交通工具)",
+                        "自己準備飯菜", "自己準備熱飲(燒開水、泡茶等)", "端熱茶或熱咖啡到客廳或房間", "洗碗盤", "在外處理金錢(提款或存錢)",
+                        "自己洗內衣褲或襪子等小件衣物", "購物", "自己洗衣服", "讀書或看報紙", "打電話", "拜訪親友、聚餐、參加婚喪喜慶",
+                        "做園藝(盆栽或花園)", "自己開車(或騎摩托車)"
+                    ];
+                    iadl_items.forEach((item, index) => {
+                        let questionNum = index + 1;
+                        document.write(`
+                        <div class="item-group">
+                            <div class="item-title" data-name="${questionNum}. ${item}">${questionNum}. ${item}</div>
+                            <label><input type="radio" name="iadl_${index}" value="0"> 0 (無)</label>
+                            <label><input type="radio" name="iadl_${index}" value="1"> 1 (需協助)</label>
+                            <label><input type="radio" name="iadl_${index}" value="2"> 2 (可自行完成但較難)</label>
+                            <label><input type="radio" name="iadl_${index}" value="3"> 3 (可輕易完成)</label>
+                        </div>`);
+                    });
+                </script>
+                <div class="score-display">總計：總分 <span id="res_iadl_total">-</span>/57</div>
+            </div>
+        </details>
+
+        <!-- 5. GAD 7 -->
+        <details>
+            <summary>5. GAD 7</summary>
+            <div class="content" id="gad7_section">
+                <script>
+                    const gad_items = [
+                        "1. 覺得緊張、焦慮、心情不定", "2. 覺得無法停止或控制焦慮", "3. 對很多不同的事感到擔憂",
+                        "4. 難以放鬆", "5. 心緒不寧以至坐立不安", "6. 容易心煩或易怒", "7. 感到害怕，就像要發生可怕的事情"
+                    ];
+                    gad_items.forEach((item, index) => {
+                        document.write(`
+                        <div class="item-group">
+                            <div class="item-title">${item}</div>
+                            <label><input type="radio" name="gad_${index}" value="0"> 0 (完全沒有)</label>
+                            <label><input type="radio" name="gad_${index}" value="1"> 1 (幾天)</label>
+                            <label><input type="radio" name="gad_${index}" value="2"> 2 (超過一半的天數)</label>
+                            <label><input type="radio" name="gad_${index}" value="3"> 3 (幾乎每天)</label>
+                        </div>`);
+                    });
+                </script>
+                <div class="score-display">總計：總分 <span id="res_gad_total">-</span>/21；嚴重程度：<span id="res_gad_level">-</span></div>
+            </div>
+        </details>
+
+        <!-- 6. PHQ-9 -->
+        <details>
+            <summary>6. PHQ-9</summary>
+            <div class="content" id="phq9_section">
+                <script>
+                    const phq_items = [
+                        "1. 做事時提不起勁或沒有樂趣", "2. 感到心情低落、沮喪或絕望", "3. 入睡困難、睡不安穩或睡眠過多",
+                        "4. 感覺疲倦或沒有活力", "5. 食慾不振或吃太多", "6. 覺得自己很糟",
+                        "7. 對事物專注有困難", "8. 動作或說話速度緩慢/煩躁或坐立不安", "9. 有不如死掉或用某種方式傷害自己的念頭"
+                    ];
+                    phq_items.forEach((item, index) => {
+                        document.write(`
+                        <div class="item-group">
+                            <div class="item-title">${item}</div>
+                            <label><input type="radio" name="phq_${index}" value="0"> 0 (完全沒有)</label>
+                            <label><input type="radio" name="phq_${index}" value="1"> 1 (幾天)</label>
+                            <label><input type="radio" name="phq_${index}" value="2"> 2 (一半以上的天數)</label>
+                            <label><input type="radio" name="phq_${index}" value="3"> 3 (幾乎每天)</label>
+                        </div>`);
+                    });
+                </script>
+                <div class="score-display">總計：總分 <span id="res_phq_total">-</span>/27；嚴重程度：<span id="res_phq_level">-</span></div>
+            </div>
+        </details>
+
+        <!-- 7. EQ-5D -->
+        <details>
+            <summary>7. EQ-5D</summary>
+            <div class="content">
+                <div class="item-group">
+                    <div class="item-title" data-name="行動能力">行動能力</div>
+                    <label><input type="radio" name="eq_mob" value="1|我四處走動沒有困難"> 1. 我四處走動沒有困難</label>
+                    <label><input type="radio" name="eq_mob" value="2|我四處走動有一點困難"> 2. 我四處走動有一點困難</label>
+                    <label><input type="radio" name="eq_mob" value="3|我四處走動有中度的困難"> 3. 我四處走動有中度的困難</label>
+                    <label><input type="radio" name="eq_mob" value="4|我四處走動有嚴重的困難"> 4. 我四處走動有嚴重的困難</label>
+                    <label><input type="radio" name="eq_mob" value="5|我無法四處走動"> 5. 我無法四處走動</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="自我照顧">自我照顧</div>
+                    <label><input type="radio" name="eq_self" value="1|我自己洗澡或穿衣沒有困難"> 1. 我自己洗澡或穿衣沒有困難</label>
+                    <label><input type="radio" name="eq_self" value="2|我自己洗澡或穿衣有一點困難"> 2. 我自己洗澡或穿衣有一點困難</label>
+                    <label><input type="radio" name="eq_self" value="3|我自己洗澡或穿衣有中度的困難"> 3. 我自己洗澡或穿衣有中度的困難</label>
+                    <label><input type="radio" name="eq_self" value="4|我自己洗澡或穿衣有嚴重的困難"> 4. 我自己洗澡或穿衣有嚴重的困難</label>
+                    <label><input type="radio" name="eq_self" value="5|我無法自己洗澡或穿衣"> 5. 我無法自己洗澡或穿衣</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="日常活動 (如工作、學習、家務、家庭或休閒活動)">日常活動 (如工作、學習、家務、家庭或休閒活動)</div>
+                    <label><input type="radio" name="eq_act" value="1|我進行日常活動沒有困難"> 1. 我進行日常活動沒有困難</label>
+                    <label><input type="radio" name="eq_act" value="2|我進行日常活動有一點困難"> 2. 我進行日常活動有一點困難</label>
+                    <label><input type="radio" name="eq_act" value="3|我進行日常活動有中度的困難"> 3. 我進行日常活動有中度的困難</label>
+                    <label><input type="radio" name="eq_act" value="4|我進行日常活動有嚴重的困難"> 4. 我進行日常活動有嚴重的困難</label>
+                    <label><input type="radio" name="eq_act" value="5|我無法進行日常活動"> 5. 我無法進行日常活動</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="疼痛或不舒服">疼痛或不舒服</div>
+                    <label><input type="radio" name="eq_pain" value="1|我沒有疼痛或不舒服"> 1. 我沒有疼痛或不舒服</label>
+                    <label><input type="radio" name="eq_pain" value="2|我有一點疼痛或不舒服"> 2. 我有一點疼痛或不舒服</label>
+                    <label><input type="radio" name="eq_pain" value="3|我有中度的疼痛或不舒服"> 3. 我有中度的疼痛或不舒服</label>
+                    <label><input type="radio" name="eq_pain" value="4|我有嚴重的疼痛或不舒服"> 4. 我有嚴重的疼痛或不舒服</label>
+                    <label><input type="radio" name="eq_pain" value="5|我有非常嚴重的疼痛或不舒服"> 5. 我有非常嚴重的疼痛或不舒服</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="焦慮或沮喪">焦慮或沮喪</div>
+                    <label><input type="radio" name="eq_anx" value="1|我沒有焦慮或沮喪"> 1. 我沒有焦慮或沮喪</label>
+                    <label><input type="radio" name="eq_anx" value="2|我有一點焦慮或沮喪"> 2. 我有一點焦慮或沮喪</label>
+                    <label><input type="radio" name="eq_anx" value="3|我有中度的焦慮或沮喪"> 3. 我有中度的焦慮或沮喪</label>
+                    <label><input type="radio" name="eq_anx" value="4|我有嚴重的焦慮或沮喪"> 4. 我有嚴重的焦慮或沮喪</label>
+                    <label><input type="radio" name="eq_anx" value="5|我有非常嚴重的焦慮或沮喪"> 5. 我有非常嚴重的焦慮或沮喪</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="健康狀況 (0-100)">健康狀況 (0-100)</div>
+                    <input type="number" id="eq_health" min="0" max="100" placeholder="分數">
+                </div>
+            </div>
+        </details>
+
+        <!-- 8. SPPB -->
+        <details>
+            <summary>8. SPPB</summary>
+            <div class="content" id="sppb_section">
+                <div class="item-group">
+                    <div class="item-title" data-name="1.平衡測試：A.並排站立">1.平衡測試：腳用三種不同站法，每種站立10秒。<br>A.並排站立 (Side-by-side stand)</div>
+                    <label><input type="radio" name="sp_bal_a" value="1"> 1分：保持10秒</label>
+                    <label><input type="radio" name="sp_bal_a" value="0"> 0分：少於10秒</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="1.平衡測試：B.半並排站立">B.半並排站立 (Semi-tandem stand)</div>
+                    <label><input type="radio" name="sp_bal_b" value="1"> 1分：保持10秒</label>
+                    <label><input type="radio" name="sp_bal_b" value="0"> 0分：少於10秒</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="1.平衡測試：C.直線站立">C.直線站立 (Tandem stand)</div>
+                    <label><input type="radio" name="sp_bal_c" value="2"> 2分：保持10秒</label>
+                    <label><input type="radio" name="sp_bal_c" value="1"> 1分：保持3-9.99秒</label>
+                    <label><input type="radio" name="sp_bal_c" value="0"> 0分：保持&lt;3秒</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="2.步行速度測試">2. 步行速度測試：測量走四公尺的時間</div>
+                    <label><input type="radio" name="sp_gait" value="4"> 4分：&lt;4.82秒</label>
+                    <label><input type="radio" name="sp_gait" value="3"> 3分：4.82–6.20秒</label>
+                    <label><input type="radio" name="sp_gait" value="2"> 2分：6.21–8.70秒</label>
+                    <label><input type="radio" name="sp_gait" value="1"> 1分：&gt; 8.70秒</label>
+                    <label><input type="radio" name="sp_gait" value="0"> 0分：無法完成</label>
+                </div>
+                <div class="item-group">
+                    <div class="item-title" data-name="3.椅子起站測試">3.椅子起站測試：連續起立坐下五次的時間</div>
+                    <label><input type="radio" name="sp_chair" value="4"> 4分：&lt;11.19秒</label>
+                    <label><input type="radio" name="sp_chair" value="3"> 3分：11.2–13.69秒</label>
+                    <label><input type="radio" name="sp_chair" value="2"> 2分：13.7–16.69秒</label>
+                    <label><input type="radio" name="sp_chair" value="1"> 1分：16.7–59.9秒</label>
+                    <label><input type="radio" name="sp_chair" value="0"> 0分：&gt; 60秒或無法完成</label>
+                </div>
+                <div class="score-display">總計：總分 <span id="res_sppb_total">-</span>/12；總分說明：<span id="res_sppb_level">-</span></div>
+            </div>
+        </details>
+
+        <!-- 9. Chief Problem -->
+        <details>
+            <summary>9. Chief Problem</summary>
+            <div class="content">
+                <div class="item-group">
+                    <div class="item-title" data-name="Chief Problem">Chief Problem (勾選有出現的問題)</div>
+                    
+                    <label style="font-weight: bold; margin-top: 10px; display: flex; align-items: flex-start;">
+                        <input type="checkbox" name="cp_1" value="1" style="margin-top: 4px;"> 
+                        <span>1. Increased assistance/supervision or decreased participation in ADL functional tasks/ meaningful occupation, as well as functional mobility due to</span>
+                    </label>
+                    
+                    <div style="margin-left: 25px; margin-top: 5px;">
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="cp_1_1" value="1" style="margin-top: 4px;"> <span>(1) Insufficient activity tolerance and limited knowledge in energy conservation strategy (including effective pacing, etc)</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="cp_1_2" value="1" style="margin-top: 4px;"> <span>(2) Limited knowledge in surgical/medical precaution (pacemaker/sternal precaution) and its implication in daily functional tasks</span></label>
+                        
+                        <label style="margin-top: 5px; display: flex; align-items: flex-start;"><input type="checkbox" name="cp_1_3" value="1" style="margin-top: 4px;"> <span>(3) Insufficient/impaired body function</span></label>
+                        <div class="cp-subbox">
+                            <label class="inline-label"><input type="checkbox" name="cp_1_3_sub" value="postural control"> postural control</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_3_sub" value="muscle strength"> muscle strength</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_3_sub" value="ROM"> ROM</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_3_sub" value="motor control"> motor control</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_3_sub" value="sensory"> sensory</label>
+                        </div>
+
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="cp_1_4" value="1" style="margin-top: 4px;"> <span>(4) Insufficient/impaired cognitive function</span></label>
+                        <div class="cp-subbox">
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="delirium"> delirium</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="arousal level"> arousal level</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="judgement"> judgement</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="calculation"> calculation</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="attention"> attention</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="orientation"> orientation</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="memory"> memory</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="executive function"> executive function</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="awareness"> awareness</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="processing speed"> processing speed</label>
+                            <label class="inline-label"><input type="checkbox" name="cp_1_4_sub" value="language comprehension"> language comprehension</label>
+                        </div>
+
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="cp_1_5" value="1" style="margin-top: 4px;"> <span>(5) Inadequate caregiver skill/social/family support</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="cp_1_6" value="1" style="margin-top: 4px;"> <span>(6) Home environment physical barrier</span></label>
+                    </div>
+
+                    <label style="font-weight: bold; margin-top: 15px; display: flex; align-items: flex-start;">
+                        <input type="checkbox" name="cp_2" value="1" style="margin-top: 4px;"> 
+                        <span>2. Limited knowledge in lifestyle modifications and self-management skill (including self-monitor vital signs, symptoms (e.g. signs of short of breath), weight control, wound care, surgical precaution or exercise routine, etc.) to prevent disease related complication/risk factor or further functional decline</span>
+                    </label>
+                    
+                    <label style="font-weight: bold; margin-top: 15px; display: flex; align-items: flex-start;">
+                        <input type="checkbox" name="cp_3" value="1" style="margin-top: 4px;"> 
+                        <span>3. Limited coping skills or stress relief strategies to adjust current life events/disease, which may further impact the motivation to engage in ADL functional tasks or OT treatment plan</span>
+                    </label>
+                </div>
+            </div>
+        </details>
+
+        <!-- 10. OT treatment plans/programs -->
+        <details>
+            <summary>10. OT treatment plans/programs</summary>
+            <div class="content">
+                <div class="item-group">
+                    <div class="item-title" data-name="OT Treatment Plans">OT treatment plans/programs (勾選欲執行的計畫)</div>
+                    
+                    <label style="font-weight: bold; margin-top: 10px; display: flex; align-items: flex-start;">
+                        <input type="checkbox" name="ot_1" value="1" style="margin-top: 4px;"> 
+                        <span>1. Maximize/promote/maintain ADL functional tasks/meaningful occupations and functional mobility performance/engagement via</span>
+                    </label>
+                    
+                    <div style="margin-left: 25px; margin-top: 5px;">
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_1" value="1" style="margin-top: 4px;"> <span>(1) ADL functional task re-training with modified method as needed</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_2" value="1" style="margin-top: 4px;"> <span>(2) Functional mobility skill re-training</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_3" value="1" style="margin-top: 4px;"> <span>(3) Activity tolerance building up or fatigue reduction (including early mobilization, exercise program, functional tasks engagement and sleeping hygiene etc.)</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_4" value="1" style="margin-top: 4px;"> <span>(4) Energy conservation strategy education (including pacing, prioritizing daily activities etc. via activity configuration or tasks simplification)</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_5" value="1" style="margin-top: 4px;"> <span>(5) Education in surgical/medical related precaution and its modified strategy in ADL functional tasks</span></label>
+                        
+                        <label style="margin-top: 5px; display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_6" value="1" style="margin-top: 4px;"> <span>(6) Neuromuscular reeducation</span></label>
+                        <div class="cp-subbox">
+                            <label class="inline-label"><input type="checkbox" name="ot_1_6_sub" value="postural control"> postural control</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_6_sub" value="muscle strength"> muscle strength</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_6_sub" value="ROM"> ROM</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_6_sub" value="motor control"> motor control</label>
+                        </div>
+
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_7" value="1" style="margin-top: 4px;"> <span>(7) Sensory reeducation</span></label>
+
+                        <label style="margin-top: 5px; display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_8" value="1" style="margin-top: 4px;"> <span>(8) Functional cognition retraining：</span></label>
+                        <div class="cp-subbox">
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="Establish daily routine/sleep-awake cycles"> Establish daily routine/sleep-awake cycles</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="Provide proper sensory stimulation"> Provide proper sensory stimulation</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="structure environment or caregiver’s guidance to enhance participation"> structure environment or caregiver’s guidance to enhance participation</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="daily reorientation"> daily reorientation</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="error less training and mass practice for functional tasks engagement"> error less training and mass practice for functional tasks engagement</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="awareness training"> awareness training</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="compensatory strategy"> compensatory strategy</label>
+                            <label class="inline-label"><input type="checkbox" name="ot_1_8_sub" value="meta-cognition training"> meta-cognition training</label>
+                        </div>
+
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_9" value="1" style="margin-top: 4px;"> <span>(9) Caregiver education and training for just right assistance/supervision and safe discharge</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_10" value="1" style="margin-top: 4px;"> <span>(10) Splinting/orthotics</span></label>
+                        <label style="display: flex; align-items: flex-start;"><input type="checkbox" name="ot_1_11" value="1" style="margin-top: 4px;"> <span>(11) Assistive device/home environment modification recommendation</span></label>
+                    </div>
+
+                    <label style="font-weight: bold; margin-top: 15px; display: flex; align-items: flex-start;">
+                        <input type="checkbox" name="ot_2" value="1" style="margin-top: 4px;"> 
+                        <span>2. Promote lifestyle modification and self-management skill in self-monitoring vital signs, symptoms (e.g. signs of short of breath), weight control, wound/skin care, scar management, infection prevention, surgical precaution or exercise routine, etc.</span>
+                    </label>
+                    
+                    <label style="font-weight: bold; margin-top: 15px; display: flex; align-items: flex-start;">
+                        <input type="checkbox" name="ot_3" value="1" style="margin-top: 4px;"> 
+                        <span>3. Explore stress/distress management strategy, including relaxation and breathing technique, healthy leisure activities engagement or sleeping hygiene etc.</span>
+                    </label>
+                </div>
+            </div>
+        </details>
+
+    </form>
+    
+    <div class="footer">江熠嫻 職能治療師 製作 2026/9</div>
+
+    <script>
+        function loadData() {
+            const savedData = JSON.parse(localStorage.getItem('clinicalForm') || '{}');
+            Object.keys(savedData).forEach(key => {
+                const el = document.getElementsByName(key)[0] || document.getElementById(key);
+                if (!el) return;
+                if (el.type === 'radio' || el.type === 'checkbox') {
+                    let elements = document.getElementsByName(key);
+                    if(elements.length > 0) {
+                        elements.forEach(e => {
+                            if(Array.isArray(savedData[key])) {
+                                if(savedData[key].includes(e.value)) e.checked = true;
+                            } else {
+                                if(e.value === savedData[key]) e.checked = true;
+                            }
+                        });
+                    }
+                } else {
+                    el.value = savedData[key];
+                }
+            });
+            calculateAll();
+        }
+
+        const form = document.getElementById('assessmentForm');
+        form.addEventListener('change', (e) => {
+            const allData = {};
+            Array.from(form.elements).forEach(el => {
+                if (el.name || el.id) {
+                    let key = el.name || el.id;
+                    if (el.type === 'radio') {
+                        if (el.checked) allData[key] = el.value;
+                    } else if (el.type === 'checkbox') {
+                        if (el.checked) {
+                            if(!allData[key]) allData[key] = [];
+                            allData[key].push(el.value);
+                        }
+                    } else {
+                        allData[key] = el.value;
+                    }
+                }
+            });
+            localStorage.setItem('clinicalForm', JSON.stringify(allData));
+            calculateAll();
+        });
+
+        function deleteAllData() {
+            if(confirm('確定要清除所有資料嗎？')) {
+                localStorage.removeItem('clinicalForm');
+                form.reset();
+                calculateAll();
+            }
+        }
+
+        function getRadioVal(name) {
+            let el = document.querySelector(`input[name="${name}"]:checked`);
+            return el ? parseInt(el.value) || 0 : 0;
+        }
+
+        function getV(name) {
+            let el = document.querySelector(`input[name="${name}"]:checked`);
+            return el ? el.value : '';
+        }
+
+        function getNumV(name) {
+            let el = document.querySelector(`input[name="${name}"]`);
+            return el ? el.value : '';
+        }
+
+        function getCheckboxVals(name) {
+            let els = document.querySelectorAll(`input[name="${name}"]:checked`);
+            let vals = [];
+            els.forEach(el => vals.push(el.parentNode.textContent.replace(/^[0-9]\.\s*/, '').trim()));
+            return vals.join('、');
+        }
+
+        function getCheckboxArray(name) {
+            let els = document.querySelectorAll(`input[name="${name}"]:checked`);
+            let vals = [];
+            els.forEach(el => vals.push(el.parentNode.textContent.trim()));
+            return vals;
+        }
+
+        function calculateAll() {
+            // BI
+            let bi_keys = ['bi_feed','bi_groom','bi_toilet','bi_bath','bi_dress','bi_bowel','bi_bladder','bi_mobile','bi_stairs','bi_trans'];
+            if (bi_keys.some(k => getV(k) !== '')) {
+                let bi_total = bi_keys.reduce((sum, k) => sum + getRadioVal(k), 0);
+                document.getElementById('res_bi_total').textContent = bi_total;
+                let bi_level = "";
+                if(bi_total <= 20) bi_level = "完全依賴";
+                else if(bi_total <= 60) bi_level = "嚴重依賴";
+                else if(bi_total <= 90) bi_level = "中度依賴";
+                else if(bi_total <= 99) bi_level = "輕度依賴";
+                else if(bi_total === 100) bi_level = "完全獨立";
+                document.getElementById('res_bi_level').textContent = bi_level;
+            } else {
+                document.getElementById('res_bi_total').textContent = "-";
+                document.getElementById('res_bi_level').textContent = "-";
+            }
+
+            // MoCA
+            let moca_keys = ['mo_vis1','mo_vis2','mo_vis3','mo_name','mo_att2','mo_att1','mo_att3','mo_lang2','mo_lang1','mo_abs','mo_mem','mo_ori'];
+            if (moca_keys.some(k => getV(k) !== '') || document.getElementById('moca_edu').checked) {
+                let mo_total = moca_keys.reduce((sum, k) => sum + getRadioVal(k), 0);
+                if(document.getElementById('moca_edu').checked) mo_total += 1;
+                document.getElementById('res_moca_total').textContent = mo_total;
+            } else {
+                document.getElementById('res_moca_total').textContent = "-";
+            }
+
+            // IADL
+            let iadl_keys = []; for(let i=0; i<19; i++) iadl_keys.push('iadl_'+i);
+            if (iadl_keys.some(k => getV(k) !== '')) {
+                let iadl_total = iadl_keys.reduce((sum, k) => sum + getRadioVal(k), 0);
+                document.getElementById('res_iadl_total').textContent = iadl_total;
+            } else {
+                document.getElementById('res_iadl_total').textContent = "-";
+            }
+
+            // GAD-7
+            let gad_keys = []; for(let i=0; i<7; i++) gad_keys.push('gad_'+i);
+            if (gad_keys.some(k => getV(k) !== '')) {
+                let gad_total = gad_keys.reduce((sum, k) => sum + getRadioVal(k), 0);
+                document.getElementById('res_gad_total').textContent = gad_total;
+                let gad_level = "正常";
+                if(gad_total >= 15) gad_level = "嚴重";
+                else if(gad_total >= 10) gad_level = "中度";
+                else if(gad_total >= 5) gad_level = "輕度";
+                document.getElementById('res_gad_level').textContent = gad_level;
+            } else {
+                document.getElementById('res_gad_total').textContent = "-";
+                document.getElementById('res_gad_level').textContent = "-";
+            }
+
+            // PHQ-9
+            let phq_keys = []; for(let i=0; i<9; i++) phq_keys.push('phq_'+i);
+            if (phq_keys.some(k => getV(k) !== '')) {
+                let phq_total = phq_keys.reduce((sum, k) => sum + getRadioVal(k), 0);
+                document.getElementById('res_phq_total').textContent = phq_total;
+                let phq_level = "正常";
+                if(phq_total >= 20) phq_level = "重度憂鬱";
+                else if(phq_total >= 15) phq_level = "中度憂鬱";
+                else if(phq_total >= 10) phq_level = "輕度憂鬱";
+                document.getElementById('res_phq_level').textContent = phq_level;
+            } else {
+                document.getElementById('res_phq_total').textContent = "-";
+                document.getElementById('res_phq_level').textContent = "-";
+            }
+
+            // SPPB
+            let sp_keys = ['sp_bal_a', 'sp_bal_b', 'sp_bal_c', 'sp_gait', 'sp_chair'];
+            if (sp_keys.some(k => getV(k) !== '')) {
+                let sp_bal_score = getRadioVal('sp_bal_a') + getRadioVal('sp_bal_b') + getRadioVal('sp_bal_c');
+                let sp_total = sp_bal_score + getRadioVal('sp_gait') + getRadioVal('sp_chair');
+                document.getElementById('res_sppb_total').textContent = sp_total;
+                let sp_level = "";
+                if(sp_total >= 10) sp_level = "行動能力正常";
+                else sp_level = "行動能力障礙";
+                document.getElementById('res_sppb_level').textContent = sp_level;
+            } else {
+                document.getElementById('res_sppb_total').textContent = "-";
+                document.getElementById('res_sppb_level').textContent = "-";
+            }
+        }
+
+        function validateForm() {
+            let errors = [];
+
+            function checkSection(panelName, radioItems, numberIds = []) {
+                let isActive = false;
+                
+                radioItems.forEach(item => {
+                    if (Array.isArray(item)) {
+                        item.forEach(name => {
+                            if (document.querySelector(`input[name="${name}"]:checked`)) isActive = true;
+                        });
+                    } else {
+                        if (document.querySelector(`input[name="${item}"]:checked`)) isActive = true;
+                    }
+                });
+                numberIds.forEach(id => {
+                    if (document.getElementById(id).value !== '') isActive = true;
+                });
+
+                if (panelName.includes("BADL")) {
+                    let badl_subs = ['badl_eat_sub', 'badl_groom_sub', 'badl_updress_sub', 'badl_lowdress_sub', 'badl_toilet_sub', 'badl_sponge_sub', 'badl_shower_sub', 'badl_loco_sub'];
+                    badl_subs.forEach(name => {
+                        if (document.querySelector(`input[name="${name}"]:checked`)) isActive = true;
+                    });
+                }
+                if (panelName.includes("IADL") && document.getElementById('iadl_pre').value !== '') isActive = true;
+                if (panelName.includes("MoCA") && document.getElementById('moca_edu').checked) isActive = true;
+
+                if (isActive) {
+                    let missingFields = [];
+                    let questionIndex = 1;
+                    
+                    radioItems.forEach(item => {
+                        if (Array.isArray(item)) {
+                            let isAnyChecked = item.some(name => document.querySelector(`input[name="${name}"]:checked`));
+                            if (!isAnyChecked) {
+                                let title = "Bathing";
+                                missingFields.push(`第${questionIndex}題 (${title})`);
+                            }
+                        } else {
+                            if (!document.querySelector(`input[name="${item}"]:checked`)) {
+                                let el = document.querySelector(`input[name="${item}"]`);
+                                let group = el ? el.closest('.item-group') : null;
+                                let titleEl = group ? group.querySelector('.item-title') : null;
+                                let title = titleEl ? (titleEl.getAttribute('data-name') || titleEl.textContent.trim()) : item;
+                                
+                                title = title.replace(/^\d+\.\s*/, '');
+                                missingFields.push(`第${questionIndex}題 (${title})`);
+                            }
+                        }
+                        questionIndex++;
+                    });
+                    
+                    numberIds.forEach(id => {
+                        if (document.getElementById(id).value === '') {
+                            let el = document.getElementById(id);
+                            let group = el ? el.closest('.item-group') : null;
+                            let titleEl = group ? group.querySelector('.item-title') : null;
+                            let title = titleEl ? (titleEl.getAttribute('data-name') || titleEl.textContent.trim()) : id;
+                            missingFields.push(`第${questionIndex}題 (${title})`);
+                        }
+                        questionIndex++;
+                    });
+
+                    if (missingFields.length > 0) {
+                        errors.push(`【${panelName}】\n未填寫：` + missingFields.join('、'));
+                    }
+                }
+            }
+
+            checkSection("1. BADL Functional Ability", [
+                'badl_eat', 'badl_groom', 'badl_bed', 'badl_updress', 'badl_lowdress', 
+                'badl_trans', 'badl_toilet', ['badl_sponge', 'badl_shower'], 'badl_loco'
+            ]);
+            
+            checkSection("2. Barthel index", ['bi_feed','bi_groom','bi_toilet','bi_bath','bi_dress','bi_bowel','bi_bladder','bi_mobile','bi_stairs','bi_trans']);
+            checkSection("3. MoCA", ['mo_vis1','mo_vis2','mo_vis3','mo_name','mo_att2','mo_att1','mo_att3','mo_lang2','mo_lang1','mo_abs','mo_mem','mo_ori']);
+            
+            let iadl_names = []; for(let i=0; i<19; i++) iadl_names.push('iadl_'+i);
+            checkSection("4. IADL(Revised Nottingham EADL)", iadl_names);
+            
+            let gad_names = []; for(let i=0; i<7; i++) gad_names.push('gad_'+i);
+            checkSection("5. GAD 7", gad_names);
+            
+            let phq_names = []; for(let i=0; i<9; i++) phq_names.push('phq_'+i);
+            checkSection("6. PHQ-9", phq_names);
+            
+            checkSection("7. EQ-5D", ['eq_mob', 'eq_self', 'eq_act', 'eq_pain', 'eq_anx'], ['eq_health']);
+            checkSection("8. SPPB", ['sp_bal_a', 'sp_bal_b', 'sp_bal_c', 'sp_gait', 'sp_chair']);
+
+            return errors;
+        }
+
+        function downloadExcel(htmlString, defaultName) {
+            let filename = prompt("請輸入要儲存的檔名：", defaultName);
+            if (!filename) return;
+            let blob = new Blob([htmlString], { type: 'application/vnd.ms-excel' });
+            let url = URL.createObjectURL(blob);
+            let a = document.createElement('a');
+            a.href = url;
+            a.download = filename + ".xls";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 格式化血壓
+        function formatBP(sbp, dbp) {
+            if (sbp && dbp) return `SBP/DBP: ${sbp}/${dbp} mmHg`;
+            if (sbp) return `SBP: ${sbp} mmHg`;
+            if (dbp) return `DBP: ${dbp} mmHg`;
+            return null;
+        }
+
+        // 格式化單個 Vital Sign 項目
+        function formatVitalSigns(prefix) {
+            let sbp = getNumV(prefix + '_sbp');
+            let dbp = getNumV(prefix + '_dbp');
+            let hr = getNumV(prefix + '_hr');
+            let spo2 = getNumV(prefix + '_spo2');
+            let parts = [];
+            
+            let bpStr = formatBP(sbp, dbp);
+            if (bpStr) parts.push(bpStr);
+            if (hr) parts.push(`HR: ${hr} bpm`);
+            if (spo2) parts.push(`SPO2: ${spo2}%`);
+            
+            let res = parts.join(", ");
+
+            let r_min = getNumV(prefix + '_rest_min');
+            let r_sbp = getNumV(prefix + '_rest_sbp');
+            let r_dbp = getNumV(prefix + '_rest_dbp');
+            let r_hr = getNumV(prefix + '_rest_hr');
+            let r_spo2 = getNumV(prefix + '_rest_spo2');
+            
+            let r_parts = [];
+            let r_bpStr = formatBP(r_sbp, r_dbp);
+            if (r_bpStr) r_parts.push(r_bpStr);
+            if (r_hr) r_parts.push(`HR: ${r_hr} bpm`);
+            if (r_spo2) r_parts.push(`SPO2: ${r_spo2}%`);
+            
+            if (r_min || r_parts.length > 0) {
+                let r_str = `休息 ${r_min || '?'} 分鐘後，回復至 ` + r_parts.join(", ");
+                res = res ? res + "；" + r_str : r_str;
+            }
+            return res;
+        }
+
+        // 產出正式評量報告 
+        function generateReport() {
+            if (typeof XLSX === 'undefined') {
+                alert("目前處於離線狀態，無法載入 Excel 匯出模組。請連接網路後再試！");
+                return;
+            }
+
+            let errors = validateForm();
+            if (errors.length > 0) {
+                alert("提醒：部分已使用之面板有漏填的項目！\n\n" + errors.join("\n\n") + "\n\n請補齊資料後再生成報告。");
+                return; 
+            }
+
+            let aoa = []; 
+
+            // 0. Premorbid Profile
+            let premorbidVal = document.getElementById('premorbid_profile').value;
+            if (premorbidVal && premorbidVal.trim() !== '') {
+                aoa.push(["0. Premorbid function and occupational profile："]);
+                aoa.push(["", premorbidVal]);
+            }
+
+            // 1. BADL
+            let badl_items = [
+                { key: 'eat', name: 'Eating' }, { key: 'groom', name: 'Grooming' }, { key: 'bed', name: 'Bed mobility：Rolling/supine to sit' },
+                { key: 'updress', name: 'Upper body dressing' }, { key: 'lowdress', name: 'Lower body dressing' }, { key: 'trans', name: 'Transfer' },
+                { key: 'toilet', name: 'Toileting' }, { key: 'sponge', name: 'Bathing：sponge bath in' }, { key: 'shower', name: 'Bathing：shower in' }, { key: 'loco', name: 'Functional Locomotion' }
+            ];
+            let has_badl = false;
+            let badl_rows = [];
+            
+            // Resting Vital Sign 
+            let r_sbp = getNumV('resting_sbp'), r_dbp = getNumV('resting_dbp'), r_hr = getNumV('resting_hr'), r_spo2 = getNumV('resting_spo2');
+            if (r_sbp || r_dbp || r_hr || r_spo2) {
+                has_badl = true;
+                badl_rows.push(["", "■ Resting Vital Sign"]);
+                let parts = [];
+                let bpStr = formatBP(r_sbp, r_dbp);
+                if (bpStr) parts.push(bpStr);
+                if (r_hr) parts.push(`HR: ${r_hr} bpm`);
+                if (r_spo2) parts.push(`SPO2: ${r_spo2}%`);
+                badl_rows.push(["", "", "o " + parts.join(", ")]);
+            }
+
+            let checkVitalKeys = ['groom', 'bed', 'updress', 'lowdress', 'trans', 'toilet', 'sponge', 'shower'];
+
+            badl_items.forEach(item => {
+                let subs = getCheckboxVals('badl_' + item.key + '_sub');
+                let fa = getV('badl_' + item.key);
+                
+                let v_str = "";
+                if (checkVitalKeys.includes(item.key)) {
+                    v_str = formatVitalSigns('badl_' + item.key);
+                }
+
+                if (subs || fa || v_str) {
+                    has_badl = true;
+                    badl_rows.push(["", "■ " + item.name]);
+                    
+                    if (subs || fa) {
+                        let combo = (subs && fa) ? `${subs}：${fa}` : (subs ? subs : fa);
+                        badl_rows.push(["", "", "o " + combo]);
+                    }
+                    
+                    if (checkVitalKeys.includes(item.key)) {
+                        let prefixText = "練習後 ";
+                        if (item.key === 'groom') {
+                            prefixText = "練習走到洗手台站著/坐床邊/坐床上刷牙洗臉後 ";
+                        } else if (item.key === 'updress') {
+                            prefixText = "坐床邊/坐床上穿脫上衣後 ";
+                        } else if (item.key === 'lowdress') {
+                            prefixText = "坐床邊/坐床上/躺床穿脫褲子後 ";
+                        }
+
+                        if (v_str) {
+                            badl_rows.push(["", "", `o ${prefixText}Vital sign：` + v_str]);
+                        }
+                    }
+                }
+            });
+            
+            if (has_badl) {
+                aoa.push(["1. BADL Functional Ability："]);
+                aoa.push(...badl_rows);
+            }
+
+            // 2. BI
+            let hasBi = false;
+            ['bi_feed','bi_groom','bi_toilet','bi_bath','bi_dress','bi_bowel','bi_bladder','bi_mobile','bi_stairs','bi_trans'].forEach(k => { if(getV(k) !== '') hasBi = true; });
+            if(hasBi) {
+                let biTotal = document.getElementById('res_bi_total').textContent;
+                let biLevel = document.getElementById('res_bi_level').textContent;
+                aoa.push([`2. Barthel index：總分${biTotal}/100；依賴程度：${biLevel}`]);
+            }
+
+            // 3. MoCA
+            let hasMoca = false;
+            ['mo_vis1','mo_vis2','mo_vis3','mo_name','mo_att2','mo_att1','mo_att3','mo_lang2','mo_lang1','mo_abs','mo_mem','mo_ori'].forEach(k => { if(getV(k) !== '') hasMoca = true; });
+            if (document.getElementById('moca_edu').checked) hasMoca = true;
+            if(hasMoca) {
+                let mocaTotal = document.getElementById('res_moca_total').textContent;
+                let isEduChecked = document.getElementById('moca_edu').checked;
+                let mocaTitle = isEduChecked ? `3. MoCA 總分${mocaTotal}/30 (教育程度小於12年，直接呈現總分+1)` : `3. MoCA 總分${mocaTotal}/30`;
+                
+                let vis1 = getV('mo_vis1') || ' ', vis2 = getV('mo_vis2') || ' ', vis3 = getV('mo_vis3') || ' ';
+                let name = getV('mo_name') || ' ';
+                let att2 = getV('mo_att2') || ' ', att1 = getV('mo_att1') || ' ', att3 = getV('mo_att3') || ' ';
+                let lang2 = getV('mo_lang2') || ' ', lang1 = getV('mo_lang1') || ' ';
+                let abs = getV('mo_abs') || ' ', mem = getV('mo_mem') || ' ', ori = getV('mo_ori') || ' ';
+                
+                aoa.push([mocaTitle]);
+                aoa.push([`(1)視覺空間執行：${vis1}/1、${vis2}/1、${vis3}/3`]);
+                aoa.push([`(2)命名：${name}/3；`]);
+                aoa.push([`(3)專注：${att2}/1、${att1}/2、${att3}/3；`]);
+                aoa.push([`(4)語言：${lang2}/1、${lang1}/2；`]);
+                aoa.push([`(5)抽象概念：${abs}/2；`]);
+                aoa.push([`(6)延遲記憶：${mem}/5；`]);
+                aoa.push([`(7)定向：${ori}/6`]);
+            }
+
+            // 4. IADL
+            let hasIadl = false;
+            for(let i=0; i<19; i++) { if(getV('iadl_'+i) !== '') hasIadl = true; }
+            let preVal = document.getElementById('iadl_pre').value;
+            if(preVal !== '') hasIadl = true;
+            if(hasIadl) {
+                let iadlTotal = document.getElementById('res_iadl_total').textContent;
+                aoa.push([`4. IADL(Revised Nottingham EADL)：總分${iadlTotal}/57(病前：${preVal || ' '}/57)`]);
+            }
+
+            // 5. GAD 7
+            let hasGad = false;
+            for(let i=0; i<7; i++) { if(getV('gad_'+i) !== '') hasGad = true; }
+            if(hasGad) {
+                let gadTotal = document.getElementById('res_gad_total').textContent;
+                let gadLevel = document.getElementById('res_gad_level').textContent;
+                aoa.push([`5. GAD 7： 總分${gadTotal}/21；嚴重程度：${gadLevel}`]);
+            }
+
+            // 6. PHQ-9
+            let hasPhq = false;
+            for(let i=0; i<9; i++) { if(getV('phq_'+i) !== '') hasPhq = true; }
+            if(hasPhq) {
+                let phqTotal = document.getElementById('res_phq_total').textContent;
+                let phqLevel = document.getElementById('res_phq_level').textContent;
+                aoa.push([`6. PHQ-9：總分${phqTotal}/27；嚴重程度：${phqLevel}`]);
+            }
+
+            // 7. EQ-5D
+            let eq_mob = getV('eq_mob'), eq_self = getV('eq_self'), eq_act = getV('eq_act'), eq_pain = getV('eq_pain'), eq_anx = getV('eq_anx'), eq_health = document.getElementById('eq_health').value;
+            if(eq_mob || eq_self || eq_act || eq_pain || eq_anx || eq_health) {
+                aoa.push(["7. EQ-5D：Quality of life-EQ-5D"]);
+                
+                const pushEq = (title, val) => {
+                    if(!val) return;
+                    let parts = val.split('|');
+                    if(parts.length === 2) {
+                        aoa.push([title, parseInt(parts[0]), parts[1]]);
+                    } else {
+                        aoa.push([title, val]);
+                    }
+                };
+
+                pushEq('(1) 行動能力：', eq_mob);
+                pushEq('(2) 自我照顧：', eq_self);
+                pushEq('(3) 日常活動 (如工作、學習、家務、家庭或休閒活動)：', eq_act);
+                pushEq('(4) 疼痛或不舒服：', eq_pain);
+                pushEq('(5) 焦慮或沮喪：', eq_anx);
+                if(eq_health) aoa.push(["(6) 健康狀況：", parseFloat(eq_health) || eq_health]);
+            }
+
+            // 8. SPPB
+            let sp_bal_a = getV('sp_bal_a'), sp_bal_b = getV('sp_bal_b'), sp_bal_c = getV('sp_bal_c');
+            let sp_gait = getV('sp_gait'), sp_chair = getV('sp_chair');
+            
+            if(sp_bal_a !== '' || sp_bal_b !== '' || sp_bal_c !== '' || sp_gait !== '' || sp_chair !== '') {
+                let sptot = document.getElementById('res_sppb_total').textContent;
+                let splev = document.getElementById('res_sppb_level').textContent;
+                
+                let bal_score = 0;
+                let hasBal = false;
+                if(sp_bal_a !== '') { bal_score += parseInt(sp_bal_a); hasBal = true; }
+                if(sp_bal_b !== '') { bal_score += parseInt(sp_bal_b); hasBal = true; }
+                if(sp_bal_c !== '') { bal_score += parseInt(sp_bal_c); hasBal = true; }
+                
+                let bal_text = hasBal ? bal_score : ' ';
+                
+                aoa.push([`8. SPPB：a.平衡測試：${bal_text}/4；b.步行速度：${sp_gait || ' '}/4；c.椅子起站：${sp_chair || ' '}/4；總分：${sptot}/12；總分說明：${splev}`]);
+            }
+
+            // 9. Chief Problem
+            let hasCp = false;
+            let cp_rows = [];
+            let cpMainIdx = 1;
+            
+            let cp11 = getV('cp_1_1');
+            let cp12 = getV('cp_1_2');
+            let cp13_arr = getCheckboxArray('cp_1_3_sub');
+            let cp13 = getV('cp_1_3') || cp13_arr.length > 0;
+            let cp14_arr = getCheckboxArray('cp_1_4_sub');
+            let cp14 = getV('cp_1_4') || cp14_arr.length > 0;
+            let cp15 = getV('cp_1_5');
+            let cp16 = getV('cp_1_6');
+            
+            if (getV('cp_1') || cp11 || cp12 || cp13 || cp14 || cp15 || cp16) {
+                hasCp = true;
+                cp_rows.push(["", cpMainIdx + ". Increased assistance/supervision or decreased participation in ADL functional tasks/ meaningful occupation, as well as functional mobility due to"]);
+                cpMainIdx++;
+                let cpSubIdx = 1;
+                if (cp11) cp_rows.push(["", "", `(${cpSubIdx++}) Insufficient activity tolerance and limited knowledge in energy conservation strategy (including effective pacing, etc)`]);
+                if (cp12) cp_rows.push(["", "", `(${cpSubIdx++}) Limited knowledge in surgical/medical precaution (pacemaker/sternal precaution) and its implication in daily functional tasks`]);
+                if (cp13) {
+                    let str = `(${cpSubIdx++}) Insufficient/impaired body function`;
+                    cp_rows.push(["", "", str]);
+                    cp13_arr.forEach(val => cp_rows.push(["", "", "      ▪ " + val]));
+                }
+                if (cp14) {
+                    let str = `(${cpSubIdx++}) Insufficient/impaired cognitive function`;
+                    cp_rows.push(["", "", str]);
+                    cp14_arr.forEach(val => cp_rows.push(["", "", "      ▪ " + val]));
+                }
+                if (cp15) cp_rows.push(["", "", `(${cpSubIdx++}) Inadequate caregiver skill/social/family support`]);
+                if (cp16) cp_rows.push(["", "", `(${cpSubIdx++}) Home environment physical barrier`]);
+            }
+            if (getV('cp_2')) {
+                hasCp = true;
+                cp_rows.push(["", cpMainIdx + ". Limited knowledge in lifestyle modifications and self-management skill (including self-monitor vital signs, symptoms (e.g. signs of short of breath), weight control, wound care, surgical precaution or exercise routine, etc.) to prevent disease related complication/risk factor or further functional decline"]);
+                cpMainIdx++;
+            }
+            if (getV('cp_3')) {
+                hasCp = true;
+                cp_rows.push(["", cpMainIdx + ". Limited coping skills or stress relief strategies to adjust current life events/disease, which may further impact the motivation to engage in ADL functional tasks or OT treatment plan"]);
+                cpMainIdx++;
+            }
+            if (hasCp) {
+                aoa.push(["9. Chief Problem："]);
+                aoa.push(...cp_rows);
+            }
+
+            // 10. OT treatment plans/programs
+            let hasOt = false;
+            let ot_rows = [];
+            let otMainIdx = 1;
+            
+            let ot11 = getV('ot_1_1');
+            let ot12 = getV('ot_1_2');
+            let ot13 = getV('ot_1_3');
+            let ot14 = getV('ot_1_4');
+            let ot15 = getV('ot_1_5');
+            let ot16_arr = getCheckboxArray('ot_1_6_sub');
+            let ot16 = getV('ot_1_6') || ot16_arr.length > 0;
+            let ot17 = getV('ot_1_7');
+            let ot18_arr = getCheckboxArray('ot_1_8_sub');
+            let ot18 = getV('ot_1_8') || ot18_arr.length > 0;
+            let ot19 = getV('ot_1_9');
+            let ot110 = getV('ot_1_10');
+            let ot111 = getV('ot_1_11');
+
+            if (getV('ot_1') || ot11 || ot12 || ot13 || ot14 || ot15 || ot16 || ot17 || ot18 || ot19 || ot110 || ot111) {
+                hasOt = true;
+                ot_rows.push(["", otMainIdx + ". Maximize/promote/maintain ADL functional tasks/meaningful occupations and functional mobility performance/engagement via"]);
+                otMainIdx++;
+                let otSubIdx = 1;
+                if (ot11) ot_rows.push(["", "", `(${otSubIdx++}) ADL functional task re-training with modified method as needed`]);
+                if (ot12) ot_rows.push(["", "", `(${otSubIdx++}) Functional mobility skill re-training`]);
+                if (ot13) ot_rows.push(["", "", `(${otSubIdx++}) Activity tolerance building up or fatigue reduction (including early mobilization, exercise program, functional tasks engagement and sleeping hygiene etc.)`]);
+                if (ot14) ot_rows.push(["", "", `(${otSubIdx++}) Energy conservation strategy education (including pacing, prioritizing daily activities etc. via activity configuration or tasks simplification)`]);
+                if (ot15) ot_rows.push(["", "", `(${otSubIdx++}) Education in surgical/medical related precaution and its modified strategy in ADL functional tasks`]);
+                if (ot16) {
+                    let str = `(${otSubIdx++}) Neuromuscular reeducation`;
+                    ot_rows.push(["", "", str]);
+                    ot16_arr.forEach(val => ot_rows.push(["", "", "      ▪ " + val]));
+                }
+                if (ot17) ot_rows.push(["", "", `(${otSubIdx++}) Sensory reeducation`]);
+                if (ot18) {
+                    let str = `(${otSubIdx++}) Functional cognition retraining：`;
+                    ot_rows.push(["", "", str]);
+                    ot18_arr.forEach(val => ot_rows.push(["", "", "      ▪ " + val]));
+                }
+                if (ot19) ot_rows.push(["", "", `(${otSubIdx++}) Caregiver education and training for just right assistance/supervision and safe discharge`]);
+                if (ot110) ot_rows.push(["", "", `(${otSubIdx++}) Splinting/orthotics`]);
+                if (ot111) ot_rows.push(["", "", `(${otSubIdx++}) Assistive device/home environment modification recommendation`]);
+            }
+            if (getV('ot_2')) {
+                hasOt = true;
+                ot_rows.push(["", otMainIdx + ". Promote lifestyle modification and self-management skill in self-monitoring vital signs, symptoms (e.g. signs of short of breath), weight control, wound/skin care, scar management, infection prevention, surgical precaution or exercise routine, etc."]);
+                otMainIdx++;
+            }
+            if (getV('ot_3')) {
+                hasOt = true;
+                ot_rows.push(["", otMainIdx + ". Explore stress/distress management strategy, including relaxation and breathing technique, healthy leisure activities engagement or sleeping hygiene etc."]);
+                otMainIdx++;
+            }
+            if (hasOt) {
+                aoa.push(["10. OT treatment plans/programs："]);
+                aoa.push(...ot_rows);
+            }
+
+            let filename = prompt("請輸入要儲存的檔名：", "評量報告");
+            if (!filename) return;
+
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "評量報告");
+            XLSX.writeFile(wb, filename + ".xlsx");
+        }
+
+        // 下載三欄位表格的原始資料 
+        function generateRawData() {
+            if (typeof XLSX === 'undefined') {
+                alert("目前處於離線狀態，無法載入 Excel 匯出模組。請連接網路後再試！");
+                return;
+            }
+
+            let aoa = [
+                ["評估量表", "評估細項", "輸入/選擇內容"]
+            ];
+            
+            let detailsEls = document.querySelectorAll('details');
+            let merges = [];
+            let currentRow = 1; 
+            
+            detailsEls.forEach(details => {
+                let sectionTitle = details.querySelector('summary').textContent;
+                let groups = details.querySelectorAll('.item-group');
+                let scaleRows = [];
+                
+                groups.forEach(g => {
+                    let titleEl = g.querySelector('.item-title');
+                    
+                    if(!titleEl) {
+                       let pre = g.querySelector('input[type="number"]');
+                       if(pre && pre.id === 'iadl_pre' && pre.value !== '') {
+                           scaleRows.push({ title: '病前分數', value: pre.value });
+                       }
+                       return; 
+                    }
+                    
+                    let title = titleEl.getAttribute('data-name') || titleEl.textContent;
+                    let vals = [];
+                    
+                    g.querySelectorAll('textarea').forEach(ta => { if(ta.value) vals.push(ta.value); });
+                    g.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => vals.push(cb.parentNode.textContent.replace(/^[0-9]\.\s*/, '').trim()));
+                    g.querySelectorAll('input[type="radio"]:checked').forEach(rb => {
+                        let textVal = rb.value.includes('|') ? rb.value.split('|')[1] : rb.parentNode.textContent.trim();
+                        vals.push(textVal.replace(/^[0-9]\.\s*/, ''));
+                    });
+                    
+                    // 針對數字輸入框 (SBP/DBP/HR/SPO2) 動態加上 Label
+                    g.querySelectorAll('input[type="number"]').forEach(n => { 
+                        if(n.value) {
+                            let lbl = n.getAttribute('data-label');
+                            vals.push(lbl ? `${lbl}: ${n.value}` : n.value);
+                        } 
+                    });
+                    
+                    if(vals.length > 0) {
+                        scaleRows.push({ title: title, value: vals.join('、') });
+                    }
+                });
+
+                let mocaEdu = details.querySelector('#moca_edu');
+                if (mocaEdu && mocaEdu.checked) {
+                    scaleRows.push({ title: '教育程度≦12年', value: '勾選加1分' });
+                }
+
+                let scoreDisplay = details.querySelector('.score-display');
+                if (scaleRows.length > 0 && scoreDisplay) {
+                    let scoreText = scoreDisplay.textContent.replace("總計：", "").replace(/\n/g, "；");
+                    scaleRows.push({ title: '結果評估 (系統加總)', value: scoreText, isScore: true });
+                }
+                
+                if(scaleRows.length > 0) {
+                    let startRow = currentRow;
+                    scaleRows.forEach((row, index) => {
+                        aoa.push([sectionTitle, row.title, row.value]);
+                        currentRow++;
+                    });
+                    let endRow = currentRow - 1;
+                    if(endRow > startRow) {
+                        merges.push({ s: {r: startRow, c: 0}, e: {r: endRow, c: 0} });
+                    }
+                }
+            });
+
+            let filename = prompt("請輸入要儲存的檔名：", "原始資料");
+            if (!filename) return;
+
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            if(merges.length > 0) {
+                ws['!merges'] = merges;
+            }
+            ws['!cols'] = [{wch: 35}, {wch: 45}, {wch: 50}]; 
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "原始資料");
+            XLSX.writeFile(wb, filename + ".xlsx");
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
